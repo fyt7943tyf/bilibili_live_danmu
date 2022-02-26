@@ -1,5 +1,4 @@
 ﻿using System.Text;
-using System.Text.Json.Nodes;
 using System.Net.WebSockets;
 using System.IO.Compression;
 using System;
@@ -8,6 +7,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.IO;
+using Newtonsoft.Json.Linq;
 
 namespace live_danmu
 {
@@ -73,13 +73,11 @@ namespace live_danmu
             HttpResponseMessage response = await client.GetAsync("https://api.live.bilibili.com/room/v1/Room/room_init?id=" + live_id.ToString());
             response.EnsureSuccessStatusCode();
             string responseBody = await response.Content.ReadAsStringAsync();
-            var data = new JsonObject
-            {
-                ["roomid"] = (UInt32)JsonNode.Parse(responseBody)["data"]["room_id"],
-                ["uid"] = (Int64)(1e14 + 2e14 * new Random().NextDouble()),
-                ["protover"] = 1,
-            };
-            var dataBytes = Encoding.ASCII.GetBytes(data.ToJsonString());
+            JObject data = new JObject();
+            data["roomid"] = (UInt32)JObject.Parse(responseBody)["data"]["room_id"];
+            data["uin"] = (Int64)(1e14 + 2e14 * new Random().NextDouble());
+            data["protover"] = 1;
+            var dataBytes = Encoding.ASCII.GetBytes(data.ToString());
             var wsLoginData = new byte[16 + dataBytes.Length];
             GetBytes(wsLoginData, 0, (UInt32)(dataBytes.Length + 16));
             wsLoginData[4] = 0x00;
@@ -231,8 +229,8 @@ namespace live_danmu
                 }
                 try
                 {
-                    var jsonNode = JsonNode.Parse(msgList[i]);
-                    var jCmd = jsonNode["cmd"];
+                    JObject jsonNode = JObject.Parse(Encoding.UTF8.GetString(msgList[i]));
+                    JToken jCmd = jsonNode["cmd"];
                     string msgType = jCmd == null ? "UNKNOW" : jCmd.ToString();
                     switch (msgType)
                     {
@@ -251,16 +249,16 @@ namespace live_danmu
             }
         }
 
-        private void process_danmu(JsonNode jsonNode, byte[] rawMsg)
+        private void process_danmu(JObject jsonNode, byte[] rawMsg)
         {
-            JsonNode jInfo = jsonNode["info"];
+            JToken jInfo = jsonNode["info"];
             BilibiliLiveDanMuMsg msg = new BilibiliLiveDanMuMsg((string)jInfo[1], (string)jInfo[2][1], UnixTimeStampToDateTime((UInt64)jInfo[0][4]), rawMsg);
             onDanmuCallback?.Invoke(msg);
         }
 
-        private void process_send_gift(JsonNode jsonNode, byte[] rawMsg)
+        private void process_send_gift(JObject jsonNode, byte[] rawMsg)
         {
-            JsonNode jData = jsonNode["data"];
+            JToken jData = jsonNode["data"];
             BilibiliLiveSendGiftMsg msg = new BilibiliLiveSendGiftMsg((UInt32)jData["giftId"], (string)jData["giftName"], (UInt32)jData["num"], (UInt32)jData["price"], (string)jData["uname"], UnixTimeStampToDateTime(UInt64.Parse((string)jData["tid"]) / 1000000), rawMsg);
             onSendGiftCallback?.Invoke(msg);
         }
