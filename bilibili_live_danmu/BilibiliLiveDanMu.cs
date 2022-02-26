@@ -75,7 +75,7 @@ namespace live_danmu
             string responseBody = await response.Content.ReadAsStringAsync();
             JObject data = new JObject();
             data["roomid"] = (UInt32)JObject.Parse(responseBody)["data"]["room_id"];
-            data["uin"] = (Int64)(1e14 + 2e14 * new Random().NextDouble());
+            data["uin"] = (Int64)(1e14 + 2e14 * new System.Random().NextDouble());
             data["protover"] = 1;
             var dataBytes = Encoding.ASCII.GetBytes(data.ToString());
             var wsLoginData = new byte[16 + dataBytes.Length];
@@ -138,7 +138,9 @@ namespace live_danmu
                 while (true)
                 {
                     WebSocketReceiveResult res = await clientWebScoket.ReceiveAsync(bytesReceived, CancellationToken.None);
-                    resp.AddRange(bytesReceived.AsMemory(0, res.Count).ToArray());
+                    byte[] data = new byte[res.Count];
+                    Array.Copy(bytesReceived.Array, data, res.Count);
+                    resp.AddRange(data);
                     if (res.EndOfMessage)
                     {
                         break;
@@ -177,11 +179,15 @@ namespace live_danmu
                 if (ver == 0 || ver == 1)
                 {
                     ops.Add(op);
-                    msgList.Add(data.AsMemory((int)(beginIndex + 16), (int)(packetLen - 16)).ToArray());
+                    byte[] msgData = new byte[packetLen - 16];
+                    Array.Copy(data, beginIndex + 16, msgData, 0, packetLen - 16);
+                    msgList.Add(msgData);
                 } 
                 else if (ver == 2)
                 {
-                    encodeMsgList.Add(data.AsMemory((int)(beginIndex + 16), (int)(packetLen - 16)).ToArray());
+                    byte[] msgData = new byte[packetLen - 16];
+                    Array.Copy(data, beginIndex + 16, msgData, 0, packetLen - 16);
+                    encodeMsgList.Add(msgData);
                 }
                 beginIndex += packetLen;
             }
@@ -217,7 +223,9 @@ namespace live_danmu
                         break;
                     }
                     ops.Add(op);
-                    msgList.Add(msg.AsMemory((int)(beginIndex + 16), (int)(packetLen - 16)).ToArray());
+                    byte[] msgData = new byte[packetLen - 16];
+                    Array.Copy(msg, beginIndex + 16, msgData, 0, packetLen - 16);
+                    msgList.Add(msgData);
                     beginIndex += packetLen;
                 }
             }
@@ -298,7 +306,9 @@ namespace live_danmu
 
         public static byte[] MicrosoftDecompress(byte[] data)
         {
-            MemoryStream compressed = new MemoryStream(data.AsMemory(2, data.Length - 6).ToArray());
+            byte[] compress_data = new byte[data.Length - 6];
+            Array.Copy(data, 2, compress_data, 0, data.Length - 6);
+            MemoryStream compressed = new MemoryStream(compress_data);
             MemoryStream decompressed = new MemoryStream();
             DeflateStream deflateStream = new DeflateStream(compressed, CompressionMode.Decompress); // 注意： 這裡第一個引數同樣是填寫壓縮的資料，但是這次是作為輸入的資料
             deflateStream.CopyTo(decompressed);
