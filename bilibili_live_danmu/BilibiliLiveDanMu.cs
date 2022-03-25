@@ -8,34 +8,41 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json.Linq;
+using bilibi;
+using cache;
 
 namespace live_danmu
 {
     public class BilibiliLiveDanMuMsg
     {
-        public BilibiliLiveDanMuMsg(string content, string userName, DateTime time, byte[] rawPacket)
+        public BilibiliLiveDanMuMsg(string content, UInt32 userId, string userName, DateTime time, byte[] rawPacket)
         {
             this.content = content;
+            this.userId = userId;
             this.userName = userName;
             this.time = time;
             this.rawPacket = rawPacket;
         }
 
         public string content;
+        public UInt32 userId;
         public string userName;
+        public string headImgUrl;
         public DateTime time;
         public byte[] rawPacket;
     }
 
     public class BilibiliLiveSendGiftMsg
     {
-        public BilibiliLiveSendGiftMsg(UInt32 giftId, string giftName, UInt32 giftNum, UInt32 giftPrice, string userName, DateTime time, byte[] rawPacket)
+        public BilibiliLiveSendGiftMsg(UInt32 giftId, string giftName, UInt32 giftNum, UInt32 giftPrice, UInt32 userId, string userName, string headImgUrl, DateTime time, byte[] rawPacket)
         {
             this.giftId = giftId;
             this.giftName = giftName;
             this.giftNum = giftNum;
             this.giftPrice = giftPrice;
+            this.userId = userId;
             this.userName = userName;
+            this.headImgUrl = headImgUrl;
             this.time = time;
             this.rawPacket = rawPacket;
         }
@@ -44,7 +51,9 @@ namespace live_danmu
         public string giftName;
         public UInt32 giftNum;
         public UInt32 giftPrice;
+        public UInt32 userId;
         public string userName;
+        public string headImgUrl;
         public DateTime time;
         public byte[] rawPacket;
     }
@@ -243,7 +252,7 @@ namespace live_danmu
                     switch (msgType)
                     {
                         case "DANMU_MSG":
-                            process_danmu(jsonNode, msgList[i]);
+                            _ = process_danmu(jsonNode, msgList[i]);
                             break;
                         case "SEND_GIFT":
                             process_send_gift(jsonNode, msgList[i]);
@@ -257,17 +266,24 @@ namespace live_danmu
             }
         }
 
-        private void process_danmu(JObject jsonNode, byte[] rawMsg)
+        private async Task process_danmu(JObject jsonNode, byte[] rawMsg)
         {
             JToken jInfo = jsonNode["info"];
-            BilibiliLiveDanMuMsg msg = new BilibiliLiveDanMuMsg((string)jInfo[1], (string)jInfo[2][1], UnixTimeStampToDateTime((UInt64)jInfo[0][4]), rawMsg);
+            BilibiliLiveDanMuMsg msg = new BilibiliLiveDanMuMsg((string)jInfo[1], (UInt32) jInfo[2][0], (string)jInfo[2][1], UnixTimeStampToDateTime((UInt64)jInfo[0][4]), rawMsg);
+            var userInfo = await UserApi.instance.GetUserInfo(msg.userId);
+            if (userInfo != null)
+            {
+                _ = HttpCache.instance.Get(userInfo.Face);
+                msg.headImgUrl = userInfo.Face;
+            }
             onDanmuCallback?.Invoke(msg);
         }
 
         private void process_send_gift(JObject jsonNode, byte[] rawMsg)
         {
             JToken jData = jsonNode["data"];
-            BilibiliLiveSendGiftMsg msg = new BilibiliLiveSendGiftMsg((UInt32)jData["giftId"], (string)jData["giftName"], (UInt32)jData["num"], (UInt32)jData["price"], (string)jData["uname"], UnixTimeStampToDateTime(UInt64.Parse((string)jData["tid"]) / 1000000), rawMsg);
+            BilibiliLiveSendGiftMsg msg = new BilibiliLiveSendGiftMsg((UInt32)jData["giftId"], (string)jData["giftName"], (UInt32)jData["num"], (UInt32)jData["price"], (UInt32)jData["uid"], (string)jData["uname"], (string)jData["face"], UnixTimeStampToDateTime(UInt64.Parse((string)jData["tid"]) / 1000000), rawMsg);
+            _ = HttpCache.instance.Get(msg.headImgUrl);
             onSendGiftCallback?.Invoke(msg);
         }
 
