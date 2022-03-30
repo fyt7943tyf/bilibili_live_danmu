@@ -8,8 +8,6 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json.Linq;
-using bilibi;
-using cache;
 
 namespace live_danmu
 {
@@ -42,7 +40,6 @@ namespace live_danmu
             this.giftPrice = giftPrice;
             this.userId = userId;
             this.userName = userName;
-            this.headImgUrl = headImgUrl;
             this.time = time;
             this.rawPacket = rawPacket;
         }
@@ -53,7 +50,6 @@ namespace live_danmu
         public UInt32 giftPrice;
         public UInt32 userId;
         public string userName;
-        public string headImgUrl;
         public DateTime time;
         public byte[] rawPacket;
     }
@@ -111,18 +107,20 @@ namespace live_danmu
             {
                 return;
             }
+            await wsConnBegin();
+            _ = decodeTask();
+        }
+
+        private async Task wsConnBegin()
+        {
             clientWebScoket = new ClientWebSocket();
             await clientWebScoket.ConnectAsync(new Uri("wss://broadcastlv.chat.bilibili.com/sub"), CancellationToken.None);
             await clientWebScoket.SendAsync(wsLoginData, WebSocketMessageType.Binary, true, CancellationToken.None);
+            heartBeatTimer?.Dispose();
             heartBeatTimer = new Timer(async delegate
             {
                 await heartBeat();
             }, null, 0, 60000);
-            try
-            {
-                decodeTask();
-            } catch (Exception) { 
-            }
         }
 
         public void stop()
@@ -138,25 +136,37 @@ namespace live_danmu
             await sendData(heartBeatMsg);
         }
 
-        private async void decodeTask()
+        private async Task decodeTask()
         {
-            ArraySegment<byte> bytesReceived = new ArraySegment<byte>(new byte[1024]);
-            while (true)
+            begin:
+            try
             {
-                List<byte> resp = new List<byte>();
+                ArraySegment<byte> bytesReceived = new ArraySegment<byte>(new byte[1024]);
                 while (true)
                 {
-                    WebSocketReceiveResult res = await clientWebScoket.ReceiveAsync(bytesReceived, CancellationToken.None);
-                    byte[] data = new byte[res.Count];
-                    Array.Copy(bytesReceived.Array, data, res.Count);
-                    resp.AddRange(data);
-                    if (res.EndOfMessage)
+                    List<byte> resp = new List<byte>();
+                    while (true)
                     {
-                        break;
-                     }
+                        WebSocketReceiveResult res = await clientWebScoket.ReceiveAsync(bytesReceived, CancellationToken.None);
+                        byte[] data = new byte[res.Count];
+                        Array.Copy(bytesReceived.Array, data, res.Count);
+                        resp.AddRange(data);
+                        if (res.EndOfMessage)
+                        {
+                            break;
+                        }
+                    }
+                    decodeMsg(resp.ToArray());
                 }
-                decodeMsg(resp.ToArray());
+            } catch (WebSocketException)
+            {
+                if (clientWebScoket != null)
+                {
+                    await wsConnBegin();
+                    goto begin;
+                }
             }
+            
         }
 
         private void decodeMsg(byte[] data)
@@ -270,12 +280,6 @@ namespace live_danmu
         {
             JToken jInfo = jsonNode["info"];
             BilibiliLiveDanMuMsg msg = new BilibiliLiveDanMuMsg((string)jInfo[1], (UInt32) jInfo[2][0], (string)jInfo[2][1], UnixTimeStampToDateTime((UInt64)jInfo[0][4]), rawMsg);
-            var userInfo = await UserApi.instance.GetUserInfo(msg.userId);
-            if (userInfo != null)
-            {
-                _ = HttpCache.instance.Get(userInfo.Face);
-                msg.headImgUrl = userInfo.Face;
-            }
             onDanmuCallback?.Invoke(msg);
         }
 
@@ -283,7 +287,6 @@ namespace live_danmu
         {
             JToken jData = jsonNode["data"];
             BilibiliLiveSendGiftMsg msg = new BilibiliLiveSendGiftMsg((UInt32)jData["giftId"], (string)jData["giftName"], (UInt32)jData["num"], (UInt32)jData["price"], (UInt32)jData["uid"], (string)jData["uname"], (string)jData["face"], UnixTimeStampToDateTime(UInt64.Parse((string)jData["tid"]) / 1000000), rawMsg);
-            _ = HttpCache.instance.Get(msg.headImgUrl);
             onSendGiftCallback?.Invoke(msg);
         }
 
