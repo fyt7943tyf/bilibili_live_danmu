@@ -25,7 +25,6 @@ namespace live_danmu
         public string content;
         public UInt32 userId;
         public string userName;
-        public string headImgUrl;
         public DateTime time;
         public byte[] rawPacket;
     }
